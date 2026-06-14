@@ -144,9 +144,9 @@ public class PortableShulkerBox extends JavaPlugin implements Listener {
 
 	@EventHandler
 	public void onInventoryClose(final InventoryCloseEvent event) {
-		if (this.playersOpeningBoxes.containsKey(event.getPlayer().getUniqueId())) {
-			saveShulker(event.getPlayer());
-			this.playersOpeningBoxes.remove(event.getPlayer().getUniqueId());
+		ActiveShulker activeShulker = this.playersOpeningBoxes.remove(event.getPlayer().getUniqueId());
+		if (activeShulker != null) {
+			saveShulker(event.getPlayer(), activeShulker);
 		}
 	}
 
@@ -241,12 +241,13 @@ public class PortableShulkerBox extends JavaPlugin implements Listener {
 	}
 
 	private void saveShulker(HumanEntity player) {
-		// Re-obtain active shulker to prevent duplicate saves.
 		ActiveShulker activeShulker = this.playersOpeningBoxes.get(player.getUniqueId());
-		if (activeShulker == null) {
-			return;
+		if (activeShulker != null) {
+			saveShulker(player, activeShulker);
 		}
+	}
 
+	private void saveShulker(HumanEntity player, ActiveShulker activeShulker) {
 		ItemStack itemStack = activeShulker.hand().get(player);
 
 		if (!isShulkerBox(itemStack)) {
@@ -281,10 +282,9 @@ public class PortableShulkerBox extends JavaPlugin implements Listener {
 	}
 
 	private void abortShulkerSession(@NotNull HumanEntity player, @NotNull String reason) {
-		if (!this.playersOpeningBoxes.containsKey(player.getUniqueId())) {
+		if (this.playersOpeningBoxes.remove(player.getUniqueId()) == null) {
 			return;
 		}
-		this.playersOpeningBoxes.remove(player.getUniqueId());
 		getLogger().warning(() -> String.format(
 				"Aborted portable shulker session for %s: %s",
 				player.getName(),
