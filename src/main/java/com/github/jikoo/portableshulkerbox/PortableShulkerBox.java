@@ -13,7 +13,9 @@ import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryCloseEvent;
 import org.bukkit.event.inventory.InventoryDragEvent;
 import org.bukkit.event.inventory.InventoryInteractEvent;
+import org.bukkit.event.entity.EntityPickupItemEvent;
 import org.bukkit.event.player.PlayerDropItemEvent;
+import org.bukkit.event.player.PlayerInteractEntityEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerItemHeldEvent;
 import org.bukkit.event.player.PlayerSwapHandItemsEvent;
@@ -116,10 +118,27 @@ public class PortableShulkerBox extends JavaPlugin implements Listener {
 
 	@EventHandler(ignoreCancelled = true)
 	public void onItemDrop(PlayerDropItemEvent event) {
-		// Dupe bug prevention: Right click, then quickly press drop key before inventory opens.
+		// Close the session if the open shulker is dropped.
 		if (this.playersOpeningBoxes.containsKey(event.getPlayer().getUniqueId())
 				&& isShulkerBox(event.getItemDrop().getItemStack())) {
 			event.getPlayer().closeInventory();
+		}
+	}
+
+	@EventHandler(ignoreCancelled = true)
+	public void onPlayerInteractEntity(PlayerInteractEntityEvent event) {
+		// Block entity interaction while a portable shulker is open.
+		if (this.playersOpeningBoxes.containsKey(event.getPlayer().getUniqueId())) {
+			event.setCancelled(true);
+		}
+	}
+
+	@EventHandler(ignoreCancelled = true)
+	public void onItemPickup(EntityPickupItemEvent event) {
+		// Block item pickup while a portable shulker is open.
+		if (event.getEntity() instanceof Player player
+				&& this.playersOpeningBoxes.containsKey(player.getUniqueId())) {
+			event.setCancelled(true);
 		}
 	}
 
@@ -212,7 +231,7 @@ public class PortableShulkerBox extends JavaPlugin implements Listener {
 		ItemStack itemStack = activeShulker.hand().get(event.getWhoClicked());
 		if (!isShulkerBox(itemStack)) {
 			event.setCancelled(true);
-			noThatIsItIAmStoppingTheServerShutItAllDownNoMoreFunForAnyoneYouAreAllBanned(event.getWhoClicked());
+			abortShulkerSession(event.getWhoClicked(), "shulker box no longer in hand");
 		}
 	}
 
@@ -231,20 +250,26 @@ public class PortableShulkerBox extends JavaPlugin implements Listener {
 		ItemStack itemStack = activeShulker.hand().get(player);
 
 		if (!isShulkerBox(itemStack)) {
-			noThatIsItIAmStoppingTheServerShutItAllDownNoMoreFunForAnyoneYouAreAllBanned(player);
+			getLogger().warning(() -> String.format(
+					"Skipped saving portable shulker for %s: shulker box no longer in hand",
+					player.getName()));
 			return;
 		}
 
 		ItemMeta itemMeta = itemStack.getItemMeta();
 		if (!(itemMeta instanceof BlockStateMeta blockStateMeta)) {
-			noThatIsItIAmStoppingTheServerShutItAllDownNoMoreFunForAnyoneYouAreAllBanned(player);
+			getLogger().warning(() -> String.format(
+					"Skipped saving portable shulker for %s: item is not a block state meta shulker box",
+					player.getName()));
 			return;
 		}
 
 		BlockState blockState = blockStateMeta.getBlockState();
 
 		if (!(blockState instanceof InventoryHolder holder)) {
-			noThatIsItIAmStoppingTheServerShutItAllDownNoMoreFunForAnyoneYouAreAllBanned(player);
+			getLogger().warning(() -> String.format(
+					"Skipped saving portable shulker for %s: shulker box has no inventory",
+					player.getName()));
 			return;
 		}
 
@@ -255,10 +280,16 @@ public class PortableShulkerBox extends JavaPlugin implements Listener {
 		activeShulker.hand().set(player, itemStack);
 	}
 
-	private void noThatIsItIAmStoppingTheServerShutItAllDownNoMoreFunForAnyoneYouAreAllBanned(HumanEntity nastyPerson) {
-		getLogger().severe(() -> String.format("Can't find shulker box for %s! Possible dupe bug!", nastyPerson.getName()));
-		this.playersOpeningBoxes.remove(nastyPerson.getUniqueId());
-		nastyPerson.closeInventory();
+	private void abortShulkerSession(@NotNull HumanEntity player, @NotNull String reason) {
+		if (!this.playersOpeningBoxes.containsKey(player.getUniqueId())) {
+			return;
+		}
+		this.playersOpeningBoxes.remove(player.getUniqueId());
+		getLogger().warning(() -> String.format(
+				"Aborted portable shulker session for %s: %s",
+				player.getName(),
+				reason));
+		player.closeInventory();
 	}
 
 	private static boolean isShulkerBox(@Nullable ItemStack itemStack) {
